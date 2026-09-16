@@ -4,36 +4,33 @@ const cors = require('cors')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const { GoogleGenAI } = require('@google/genai')
-const { prisma } = require('./prisma.js')
 const swaggerUi = require('swagger-ui-express')
 const swaggerJsdoc = require('swagger-jsdoc')
+const { prisma } = require('./prisma.js')
 
 const app = express()
 app.use(cors())
 app.use(express.json())
-
-const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-12345'
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
 
 // ----------------- SWAGGER CONFIGURATION ----------------- //
 const swaggerOptions = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'DevPulse OS API Documentation',
+      title: 'DevPulse API Documentation',
       version: '1.0.0',
-      description: 'Interactive REST API documentation for DevPulse developer platform.',
+      description: 'REST API documentation for DevPulse OS',
     },
     servers: [
-  {
-    url: 'https://dev-dashboard-api-8y1k.onrender.com',
-    description: 'Production Server'
-  },
-  {
-    url: 'http://localhost:5000',
-    description: 'Local Server'
-  }
-]
+      {
+        url: 'http://localhost:5000',
+        description: 'Local Development Server',
+      },
+      {
+        url: 'https://dev-dashboard-api-8y1k.onrender.com',
+        description: 'Production Render Server',
+      },
+    ],
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -50,6 +47,9 @@ const swaggerOptions = {
 
 const swaggerDocs = swaggerJsdoc(swaggerOptions)
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs))
+
+const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-12345'
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
 
 // Middleware to authenticate JWT Token
 const authenticateToken = (req, res, next) => {
@@ -71,7 +71,7 @@ const authenticateToken = (req, res, next) => {
  * /api/auth/register:
  *   post:
  *     summary: Register a new user
- *     tags: [Authentication]
+ *     tags: [Auth]
  *     requestBody:
  *       required: true
  *       content:
@@ -88,9 +88,9 @@ const authenticateToken = (req, res, next) => {
  *                 type: string
  *     responses:
  *       201:
- *         description: User created successfully
+ *         description: User registered successfully
  *       400:
- *         description: Validation error
+ *         description: Validation or existing user error
  */
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -120,8 +120,8 @@ app.post('/api/auth/register', async (req, res) => {
  * @swagger
  * /api/auth/login:
  *   post:
- *     summary: Login user and return JWT
- *     tags: [Authentication]
+ *     summary: Login an existing user
+ *     tags: [Auth]
  *     requestBody:
  *       required: true
  *       content:
@@ -136,7 +136,7 @@ app.post('/api/auth/register', async (req, res) => {
  *                 type: string
  *     responses:
  *       200:
- *         description: Successfully authenticated
+ *         description: Login successful, returns JWT token
  *       400:
  *         description: Invalid credentials
  */
@@ -162,13 +162,15 @@ app.post('/api/auth/login', async (req, res) => {
  * @swagger
  * /api/projects:
  *   get:
- *     summary: Retrieve user projects
+ *     summary: Fetch all projects for the authenticated user
  *     tags: [Projects]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: List of projects
+ *         description: List of user projects
+ *       401:
+ *         description: Unauthorized
  */
 app.get('/api/projects', authenticateToken, async (req, res) => {
   try {
@@ -199,7 +201,17 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
  *             properties:
  *               title:
  *                 type: string
+ *               name:
+ *                 type: string
  *               description:
+ *                 type: string
+ *               category:
+ *                 type: string
+ *               techStack:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               priority:
  *                 type: string
  *     responses:
  *       201:
@@ -207,7 +219,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
  */
 app.post('/api/projects', authenticateToken, async (req, res) => {
   try {
-    const { title, name, description, category, techStack } = req.body
+    const { title, name, description, category, techStack, priority } = req.body
     const projectTitle = title || name || 'New Project'
     
     const project = await prisma.project.create({
@@ -227,7 +239,7 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
  * @swagger
  * /api/projects/{id}:
  *   delete:
- *     summary: Delete a project
+ *     summary: Delete a project by ID
  *     tags: [Projects]
  *     security:
  *       - bearerAuth: []
@@ -239,7 +251,7 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
  *           type: string
  *     responses:
  *       200:
- *         description: Project deleted
+ *         description: Project deleted successfully
  */
 app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
   try {
@@ -256,13 +268,13 @@ app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
  * @swagger
  * /api/tasks:
  *   get:
- *     summary: Get all user tasks
+ *     summary: Fetch all tasks for the authenticated user
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: List of tasks
+ *         description: List of user tasks
  */
 app.get('/api/tasks', authenticateToken, async (req, res) => {
   try {
@@ -289,6 +301,7 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [title]
  *             properties:
  *               title:
  *                 type: string
@@ -302,7 +315,7 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
  *                 type: string
  *     responses:
  *       201:
- *         description: Task created
+ *         description: Task created successfully
  */
 app.post('/api/tasks', authenticateToken, async (req, res) => {
   try {
@@ -323,6 +336,39 @@ app.post('/api/tasks', authenticateToken, async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /api/tasks/{id}:
+ *   put:
+ *     summary: Update task details or status
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               priority:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Task updated successfully
+ */
 const handleTaskUpdate = async (req, res) => {
   try {
     const { status, title, description, priority } = req.body
@@ -341,34 +387,6 @@ const handleTaskUpdate = async (req, res) => {
   }
 }
 
-/**
- * @swagger
- * /api/tasks/{id}:
- *   put:
- *     summary: Update a task
- *     tags: [Tasks]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               status:
- *                 type: string
- *               title:
- *                 type: string
- *     responses:
- *       200:
- *         description: Task updated
- */
 app.patch('/api/tasks/:id', authenticateToken, handleTaskUpdate)
 app.put('/api/tasks/:id', authenticateToken, handleTaskUpdate)
 
@@ -376,7 +394,7 @@ app.put('/api/tasks/:id', authenticateToken, handleTaskUpdate)
  * @swagger
  * /api/tasks/{id}:
  *   delete:
- *     summary: Delete a task
+ *     summary: Delete a task by ID
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -388,7 +406,7 @@ app.put('/api/tasks/:id', authenticateToken, handleTaskUpdate)
  *           type: string
  *     responses:
  *       200:
- *         description: Task deleted
+ *         description: Task deleted successfully
  */
 app.delete('/api/tasks/:id', authenticateToken, async (req, res) => {
   try {
@@ -405,8 +423,8 @@ app.delete('/api/tasks/:id', authenticateToken, async (req, res) => {
  * @swagger
  * /api/ai/breakdown:
  *   post:
- *     summary: Generate AI Task Breakdown
- *     tags: [AI Features]
+ *     summary: AI Task Breakdown & Priority Suggestion
+ *     tags: [AI]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -419,9 +437,10 @@ app.delete('/api/tasks/:id', authenticateToken, async (req, res) => {
  *             properties:
  *               taskGoal:
  *                 type: string
+ *                 example: "Implement OAuth2 login provider with Google"
  *     responses:
  *       200:
- *         description: AI Subtasks generated
+ *         description: AI generated sub-tasks array
  */
 app.post('/api/ai/breakdown', authenticateToken, async (req, res) => {
   try {
@@ -466,5 +485,4 @@ app.post('/api/ai/breakdown', authenticateToken, async (req, res) => {
 const PORT = process.env.PORT || 5000
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`)
-  console.log(`Swagger UI live at http://localhost:${PORT}/api-docs`)
 })
